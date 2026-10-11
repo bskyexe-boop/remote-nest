@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Nest — Remote Administration</title>
+    <link rel="stylesheet" href="assets/css/fonts.css">
+    <link rel="stylesheet" href="assets/css/material-symbols.css">
+    <link rel="stylesheet" href="assets/css/xterm.min.css">
+    <link rel="stylesheet" href="assets/css/tailwind.min.css">
+    <script src="assets/js/xterm.min.js"></script>
+    <script src="assets/js/addon-fit.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Inter', system-ui, sans-serif; background: #070d1a; color: #e2e8f0; margin: 0; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+        .icon-filled { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+        /* Animations */
+        .stat-bar { transition: width 0.8s cubic-bezier(0.4,0,0.2,1); }
+        @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.3); } 50% { box-shadow: 0 0 12px 4px rgba(59,130,246,0.15); } }
+        @keyframes float-in { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .toast-enter { animation: slideIn 0.35s cubic-bezier(0.4,0,0.2,1), fadeOut 0.5s ease 3.5s forwards; }
+        .float-in { animation: float-in 0.4s cubic-bezier(0.4,0,0.2,1) both; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #1e3050; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #2a3f66; }
+
+        /* Context Menu */
+        .ctx-menu { position: fixed; z-index: 200; min-width: 170px; background: #1a2744; border: 1px solid #2a3f66; border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); padding: 5px 0; backdrop-filter: blur(16px); }
+        .ctx-menu button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 16px; font-size: 13px; color: #e2e8f0; background: none; border: none; cursor: pointer; transition: background 0.12s; border-radius: 0; }
+        .ctx-menu button:hover { background: rgba(59,130,246,0.1); }
+        .ctx-menu button .material-symbols-outlined { font-size: 18px; color: #8899b4; }
+        .ctx-menu hr { border: none; border-top: 1px solid #1e3050; margin: 4px 0; }
+
+        /* File row action buttons */
+        .fm-act { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; border: none; background: none; cursor: pointer; transition: background 0.12s; padding: 0; }
+        .fm-act:hover { background: rgba(59,130,246,0.12); }
+
+        /* Modal */
+        .modal-backdrop { background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); }
+
+        /* File rows */
+        .file-row { transition: background 0.12s; }
+        .file-row:hover { background: rgba(30,45,74,0.4); }
+        .file-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 5fr) minmax(0, 2fr) minmax(0, 3fr) minmax(0, 2fr);
+            gap: 0.5rem;
+        }
+        .file-name-cell { min-width: 0; overflow: hidden; }
+        .file-name-text {
+            flex: 1 1 0%;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .admin-data-table { border-collapse: collapse; width: 100%; min-width: 760px; }
+        .admin-data-table th, .admin-data-table td { border-bottom: 1px solid rgba(26,39,68,0.65); }
+        .security-check { border: 1px solid #1a2744; border-left-width: 4px; }
+        .security-check.pass { border-left-color: #34d399; }
+        .security-check.warning { border-left-color: #f59e0b; }
+        .security-check.critical { border-left-color: #f87171; }
+        .breadcrumb-seg { color: #8899b4; cursor: pointer; transition: color 0.15s; }
+        .breadcrumb-seg:hover { color: #e2e8f0; }
+
+        /* Navigation */
+        .nav-link { display: flex; align-items: center; gap: 12px; padding: 10px 16px; min-height: 44px; border-left: 3px solid transparent; color: #8899b4; font-size: 13.5px; font-weight: 500; cursor: pointer; transition: all 0.15s ease; border-radius: 0 8px 8px 0; margin-right: 8px; user-select: none; }
+        .nav-link:hover { background: rgba(59,130,246,0.06); color: #c8d6e5; }
+        .nav-link.active { color: #3b82f6; background: rgba(59,130,246,0.1); border-left-color: #3b82f6; font-weight: 600; }
+
+        /* Drag & Drop */
+        .drop-active { outline: 2px dashed #3b82f6; outline-offset: -2px; background: rgba(59,130,246,0.04) !important; }
+        .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; backdrop-filter: blur(2px); }
+        @media (max-width: 767px) { .sidebar-overlay.show { display: block; } }
+
+        /* Terminal — container MUST have explicit pixel dimensions for FitAddon */
+        #terminal-container { position: relative; overflow: hidden; }
+        #terminal-container .xterm { position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 4px 8px; }
+        #terminal-container .xterm-viewport { overflow-y: auto !important; }
+        #terminal-container .xterm-screen { border-radius: 6px; }
+
+        /* Inputs */
+        .rn-input { background: #0d1527; border: 1px solid #1e3050; color: #e2e8f0; border-radius: 10px; padding: 11px 14px; font-size: 14px; width: 100%; outline: none; transition: border-color 0.2s, box-shadow 0.2s; font-family: 'Inter', system-ui, sans-serif; }
+        .rn-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+        .rn-input::placeholder { color: #4a5e80; }
+
+        /* Buttons */
+        .rn-btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #fff; border: none; border-radius: 10px; padding: 11px 16px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; min-height: 44px; transition: all 0.2s; font-family: 'Inter', system-ui, sans-serif; letter-spacing: 0.01em; }
+        .rn-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.3); }
+        .rn-btn-primary:active { transform: translateY(0); }
+        .rn-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .rn-btn-outline { background: transparent; color: #c8d6e5; border: 1px solid #1e3050; border-radius: 10px; padding: 9px 14px; font-size: 13px; font-weight: 500; cursor: pointer; min-height: 44px; transition: all 0.15s; font-family: 'Inter', system-ui, sans-serif; }
+        .rn-btn-outline:hover { background: rgba(59,130,246,0.08); border-color: #2a3f66; }
+
+        /* Cards */
+        .rn-card { background: rgba(21,31,53,0.7); backdrop-filter: blur(12px); border: 1px solid #1a2744; border-radius: 14px; }
+        .rn-card-glow { box-shadow: 0 0 30px rgba(59,130,246,0.04), inset 0 1px 0 rgba(255,255,255,0.03); }
+
+        /* Stat card accent line */
+        .stat-card { position: relative; overflow: hidden; }
+        .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 14px 14px 0 0; }
+        .stat-card.cpu::before { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+        .stat-card.mem::before { background: linear-gradient(90deg, #4ade80, #86efac); }
+        .stat-card.disk::before { background: linear-gradient(90deg, #fbbf24, #fcd34d); }
+    </style>
+</head>
+<body class="h-screen overflow-hidden">
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen" class="min-h-screen flex items-center justify-center p-4" style="background:radial-gradient(ellipse at 50% 0%, rgba(59,130,246,0.08) 0%, transparent 60%), #070d1a">
+    <div class="w-full max-w-md float-in">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-500 text-white mb-4" style="animation:pulse-glow 3s infinite">
+                <span class="material-symbols-outlined" style="font-size:32px">dns</span>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight" style="color:#e2e8f0">Remote Nest</h1>
+            <p class="mt-1 text-sm" style="color:#8899b4">Secure Web-Based Remote Administration</p>
+        </div>
+        <div id="login-card" class="rn-card rn-card-glow p-8" style="backdrop-filter:blur(20px);background:rgba(13,21,39,0.85)">
+            <form id="login-form" class="space-y-5">
+                <div>
+                    <label class="block text-sm font-medium mb-1.5" style="color:#e2e8f0">Username</label>
+                    <input id="login-username" type="text" required autocomplete="username" class="rn-input" placeholder="Enter username">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1.5" style="color:#e2e8f0">Password</label>
+                    <input id="login-password" type="password" required autocomplete="current-password" class="rn-input" placeholder="Enter password">
+                </div>
+                <button id="login-submit" type="submit" class="rn-btn-primary">Sign In</button>
+                <p class="text-center text-sm" style="color:#8899b4">
+                    <a href="#" id="show-setup-link" style="color:#3b82f6" class="hover:underline">First time setup?</a>
+                </p>
+            </form>
+        </div>
+        <div id="setup-card" class="hidden rn-card rn-card-glow p-8 mt-4" style="backdrop-filter:blur(20px);background:rgba(13,21,39,0.85)">
+            <h2 class="text-lg font-semibold mb-1" style="color:#e2e8f0">Create Administrator</h2>
+            <p class="text-sm mb-6" style="color:#8899b4">Set up the initial admin account for your Remote Nest instance.</p>
+            <form id="setup-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1.5" style="color:#e2e8f0">Username</label>
+                    <input id="setup-username" type="text" required minlength="3" class="rn-input" placeholder="Admin username">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1.5" style="color:#e2e8f0">Password</label>
+                    <input id="setup-password" type="password" required minlength="6" class="rn-input" placeholder="Password (min 6 chars)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1.5" style="color:#e2e8f0">Confirm Password</label>
+                    <input id="setup-confirm" type="password" required minlength="6" class="rn-input" placeholder="Confirm password">
+                </div>
+                <button id="setup-submit" type="submit" class="rn-btn-primary">Create Administrator</button>
+                <p class="text-center text-sm">
+                    <a href="#" id="show-login-link" style="color:#3b82f6" class="hover:underline">Back to login</a>
+                </p>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN APPLICATION -->
+<div id="app-screen" class="hidden h-screen flex flex-col">
+    <div id="sidebar-overlay" class="sidebar-overlay" onclick="App._closeSidebar()"></div>
+    <header class="h-14 flex-shrink-0 z-30 flex items-center px-4 gap-3" style="background:rgba(13,21,39,0.88);backdrop-filter:blur(12px);border-bottom:1px solid #1a2744">
+        <button id="hamburger-btn" class="md:hidden min-h-touch min-w-touch flex items-center justify-center rounded-lg transition" style="color:#8899b4" onclick="App._toggleSidebar()">
+            <span class="material-symbols-outlined">menu</span>
+        </button>
+        <div id="breadcrumb" class="flex-1 text-sm truncate font-mono px-2 min-w-0" style="color:#8899b4">/</div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button class="min-h-touch min-w-touch flex items-center justify-center rounded-lg transition" style="color:#8899b4" title="Notifications" onclick="App.toast('No new notifications','info')">
+                <span class="material-symbols-outlined">notifications</span>
+            </button>
+            <button id="theme-toggle" class="min-h-touch min-w-touch flex items-center justify-center rounded-lg transition" style="color:#8899b4" title="Toggle theme" onclick="App.toggleTheme()">
+                <span id="theme-icon" class="material-symbols-outlined">dark_mode</span>
+            </button>
+            <div class="flex items-center gap-2 ml-1">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm" style="background:rgba(59,130,246,0.2);color:#3b82f6">
+                    <span id="user-avatar">A</span>
+                </div>
+                <span id="user-display" class="hidden sm:inline text-sm font-medium" style="color:#e2e8f0"></span>
+            </div>
+        </div>
+    </header>
+    <div class="flex flex-1 overflow-hidden">
+        <aside id="sidebar" class="fixed md:static z-50 md:z-auto w-64 flex-shrink-0 flex flex-col transform -translate-x-full md:translate-x-0 transition-transform duration-200" style="background:#0d1527;border-right:1px solid #1a2744;height:calc(100vh - 3.5rem)">
+            <div class="p-4 border-b" style="border-color:#1a2744">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500 text-white flex items-center justify-center flex-shrink-0">
+                        <span class="material-symbols-outlined">dns</span>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="font-bold text-sm" style="color:#e2e8f0">Remote Nest</div>
+                        <div class="text-xs" style="color:#8899b4">V2.5.0-stable</div>
+                    </div>
+                </div>
+            </div>
+            <div class="px-3 pt-3">
+                <button class="rn-btn-outline flex items-center justify-center gap-2 text-sm w-full" onclick="App.toast('Node connection coming soon','info')">
+                    <span class="material-symbols-outlined" style="font-size:18px">add</span>Connect a Node
+                </button>
+            </div>
+            <nav class="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                <div class="nav-link active" data-view="home"><span class="material-symbols-outlined">home</span>Home</div>
+                <div class="nav-link" data-view="files"><span class="material-symbols-outlined">folder_open</span>Files</div>
+                <div id="admin-nav-terminal" class="nav-link" data-view="terminal"><span class="material-symbols-outlined">terminal</span>Terminal</div>
+                <div id="admin-nav-settings" class="nav-link" data-view="settings"><span class="material-symbols-outlined">settings</span>Settings</div>
+            </nav>
+            <div class="p-2 border-t" style="border-color:#1a2744">
+                <div id="admin-nav-logs" class="nav-link" data-view="logs"><span class="material-symbols-outlined">receipt_long</span>Logs</div>
+                <div id="admin-nav-security" class="nav-link" data-view="security"><span class="material-symbols-outlined">shield</span>Security</div>
+                <div class="nav-link" id="logout-btn"><span class="material-symbols-outlined">logout</span>Logout</div>
+            </div>
+        </aside>
+        <main class="flex-1 overflow-hidden" style="background:#070d1a">
+
+            <!-- HOME PANEL -->
+            <div id="view-home" class="h-full overflow-auto p-4 md:p-6">
+                <h2 class="text-lg font-bold mb-4" style="color:#e2e8f0">System Overview</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="rn-card rn-card-glow stat-card cpu p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2"><span class="material-symbols-outlined" style="color:#3b82f6">memory</span><h3 class="font-medium text-sm" style="color:#e2e8f0">CPU Usage</h3></div>
+                            <span id="cpu-value" class="text-2xl font-bold" style="color:#3b82f6">0%</span>
+                        </div>
+                        <div class="w-full h-2 rounded-full overflow-hidden" style="background:#1e2d4a"><div id="cpu-bar" class="stat-bar h-full rounded-full" style="width:0%;background:linear-gradient(90deg,#3b82f6,#60a5fa)"></div></div>
+                        <p id="cpu-detail" class="text-xs mt-2" style="color:#8899b4">--</p>
+                    </div>
+                    <div class="rn-card rn-card-glow stat-card mem p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2"><span class="material-symbols-outlined" style="color:#4ade80">memory</span><h3 class="font-medium text-sm" style="color:#e2e8f0">Memory</h3></div>
+                            <span id="mem-value" class="text-2xl font-bold" style="color:#4ade80">0%</span>
+                        </div>
+                        <div class="w-full h-2 rounded-full overflow-hidden" style="background:#1e2d4a"><div id="mem-bar" class="stat-bar h-full rounded-full" style="width:0%;background:linear-gradient(90deg,#4ade80,#86efac)"></div></div>
+                        <p id="mem-detail" class="text-xs mt-2" style="color:#8899b4">--</p>
+                    </div>
+                    <div class="rn-card rn-card-glow stat-card disk p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2"><span class="material-symbols-outlined" style="color:#fbbf24">storage</span><h3 class="font-medium text-sm" style="color:#e2e8f0">Disk Usage</h3></div>
+                            <span id="disk-value" class="text-2xl font-bold" style="color:#fbbf24">0%</span>
+                        </div>
+                        <div class="w-full h-2 rounded-full overflow-hidden" style="background:#1e2d4a"><div id="disk-bar" class="stat-bar h-full rounded-full" style="width:0%;background:linear-gradient(90deg,#fbbf24,#fcd34d)"></div></div>
+                        <p id="disk-detail" class="text-xs mt-2" style="color:#8899b4">--</p>
+                    </div>
+                </div>
+                <div class="rn-card rn-card-glow p-5">
+                    <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined" style="color:#8899b4">info</span><h3 class="font-medium text-sm" style="color:#e2e8f0">System Information</h3></div>
+                    <table id="sys-info" class="w-full text-sm">
+                        <tr><td class="pr-4 py-1.5 font-medium w-32" style="color:#8899b4">Hostname</td><td class="py-1.5 font-mono" style="color:#e2e8f0">--</td></tr>
+                        <tr><td class="pr-4 py-1.5 font-medium" style="color:#8899b4">Platform</td><td class="py-1.5 font-mono" style="color:#e2e8f0">--</td></tr>
+                        <tr><td class="pr-4 py-1.5 font-medium" style="color:#8899b4">Uptime</td><td id="sys-uptime" class="py-1.5 font-mono" style="color:#e2e8f0">--</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <!-- FILES PANEL -->
+            <div id="view-files" class="hidden h-full flex flex-col">
+                <div class="flex items-center gap-2 px-4 md:px-6 py-3 flex-shrink-0" style="background:#0d1527;border-bottom:1px solid #1a2744">
+                    <button id="btn-upload" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white rounded-lg min-h-touch transition" style="background:linear-gradient(135deg,#3b82f6 0%,#2563eb 100%)">
+                        <span class="material-symbols-outlined" style="font-size:18px">upload_file</span><span class="hidden sm:inline">Upload</span>
+                    </button>
+                    <button id="btn-new-folder" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rn-btn-outline">
+                        <span class="material-symbols-outlined" style="font-size:18px">create_new_folder</span><span class="hidden sm:inline">New Folder</span>
+                    </button>
+                    <button id="btn-new-file" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rn-btn-outline">
+                        <span class="material-symbols-outlined" style="font-size:18px">note_add</span><span class="hidden sm:inline">New File</span>
+                    </button>
+                </div>
+                <div id="file-list" class="flex-1 overflow-auto px-2">
+                    <div class="text-center py-16" style="color:#8899b4">Loading...</div>
+                </div>
+            </div>
+
+            <!-- TERMINAL PANEL -->
+            <div id="view-terminal" class="hidden h-full flex flex-col" style="background:#070d1a">
+                <div id="terminal-container" class="flex-1 p-2"></div>
+                <div id="terminal-status" class="h-8 flex items-center px-4 flex-shrink-0 text-xs" style="background:rgba(21,31,53,0.8);border-top:1px solid #1a2744">
+                    <span class="status-dot w-2 h-2 rounded-full mr-2 flex-shrink-0" style="background:#8899b4"></span>
+                    <span class="status-label" style="color:#8899b4">Disconnected</span>
+                </div>
+            </div>
+
+            <!-- SETTINGS PANEL -->
+            <div id="view-settings" class="hidden h-full overflow-auto p-4 md:p-6">
+                <h2 class="text-lg font-bold mb-4" style="color:#e2e8f0">Settings</h2>
+                <div id="settings-users-section" class="hidden mb-6">
+                    <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined" style="color:#3b82f6">group</span><h3 class="font-semibold" style="color:#e2e8f0">User Management</h3></div>
+                    <div class="rn-card rn-card-glow p-5 mb-4">
+                        <h4 class="text-sm font-medium mb-3" style="color:#e2e8f0">Add New User</h4>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <div class="flex-1 min-w-[140px]">
+                                <label class="block text-xs mb-1" style="color:#8899b4">Username</label>
+                                <input id="new-user-name" type="text" class="rn-input" placeholder="Username">
+                            </div>
+                            <div class="flex-1 min-w-[140px]">
+                                <label class="block text-xs mb-1" style="color:#8899b4">Password</label>
+                                <input id="new-user-pass" type="password" class="rn-input" placeholder="Password">
+                            </div>
+                            <button onclick="App._addUser()" class="rn-btn-primary !w-auto px-6">Add User</button>
+                        </div>
+                    </div>
+                    <div class="rn-card rn-card-glow overflow-hidden">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-xs uppercase border-b" style="color:#8899b4;border-color:#1a2744">
+                                    <th class="py-3 px-4 font-semibold">Username</th>
+                                    <th class="py-3 px-4 font-semibold">Role</th>
+                                    <th class="py-3 px-4 font-semibold">Allowed Dirs</th>
+                                    <th class="py-3 px-4 font-semibold">Created</th>
+                                    <th class="py-3 px-4 font-semibold text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-list"><tr><td colspan="5" class="py-6 text-center" style="color:#8899b4">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="mb-6">
+                    <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined" style="color:#8899b4">cable</span><h3 class="font-semibold" style="color:#e2e8f0">Connection</h3></div>
+                    <div class="rn-card rn-card-glow p-5 space-y-2 text-sm">
+                        <div class="flex justify-between"><span style="color:#8899b4">WebSocket URL</span><span id="ws-url-display" class="font-mono" style="color:#e2e8f0">--</span></div>
+                        <div class="flex justify-between"><span style="color:#8899b4">Server Version</span><span style="color:#e2e8f0">V2.5.0-stable</span></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined" style="color:#8899b4">palette</span><h3 class="font-semibold" style="color:#e2e8f0">Appearance</h3></div>
+                    <div class="rn-card rn-card-glow p-5">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="text-sm font-medium" style="color:#e2e8f0">Dark Mode</div>
+                                <div class="text-xs" style="color:#8899b4">Toggle between light and dark themes</div>
+                            </div>
+                            <button class="w-12 h-7 rounded-full relative transition-colors" style="background:#1e2d4a" onclick="App.toggleTheme()">
+                                <div id="theme-toggle-dot" class="w-5 h-5 rounded-full absolute top-1 transition-all duration-200" style="background:#3b82f6;left:24px"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LOGS PANEL -->
+            <div id="view-logs" class="hidden h-full flex flex-col">
+                <div class="flex flex-wrap items-center gap-3 px-4 md:px-6 py-3 flex-shrink-0" style="background:#0d1527;border-bottom:1px solid #1a2744">
+                    <div class="mr-auto">
+                        <h2 class="font-semibold" style="color:#e2e8f0">Server Logs</h2>
+                        <p id="logs-status" class="text-xs" style="color:#8899b4">Live application and access events</p>
+                    </div>
+                    <select id="logs-level" class="rn-input !w-auto !py-2" aria-label="Log level">
+                        <option value="">All levels</option>
+                        <option value="INFO">Info</option>
+                        <option value="WARNING">Warnings</option>
+                        <option value="ERROR">Errors</option>
+                    </select>
+                    <input id="logs-search" class="rn-input !w-56 !py-2" type="search" placeholder="Search logs..." aria-label="Search logs">
+                    <button id="logs-refresh" class="rn-btn-outline !min-h-auto py-2 px-3 inline-flex items-center gap-1.5">
+                        <span class="material-symbols-outlined" style="font-size:18px">refresh</span>Refresh
+                    </button>
+                </div>
+                <div class="grid grid-cols-3 gap-3 px-4 md:px-6 py-3 flex-shrink-0">
+                    <div class="rn-card px-4 py-3"><div id="logs-info-count" class="text-xl font-bold" style="color:#60a5fa">0</div><div class="text-xs" style="color:#8899b4">Information</div></div>
+                    <div class="rn-card px-4 py-3"><div id="logs-warning-count" class="text-xl font-bold" style="color:#fbbf24">0</div><div class="text-xs" style="color:#8899b4">Warnings</div></div>
+                    <div class="rn-card px-4 py-3"><div id="logs-error-count" class="text-xl font-bold" style="color:#f87171">0</div><div class="text-xs" style="color:#8899b4">Errors</div></div>
+                </div>
+                <div class="flex-1 overflow-auto px-4 md:px-6 pb-5">
+                    <div class="rn-card overflow-auto">
+                        <table class="admin-data-table text-sm">
+                            <thead class="text-left text-xs uppercase" style="color:#8899b4;background:#0d1527">
+                                <tr><th class="px-4 py-3 font-semibold">Time</th><th class="px-4 py-3 font-semibold">Level</th><th class="px-4 py-3 font-semibold">Source</th><th class="px-4 py-3 font-semibold">Message</th></tr>
+                            </thead>
+                            <tbody id="logs-list"><tr><td colspan="4" class="px-4 py-10 text-center" style="color:#8899b4">Loading logs...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECURITY PANEL -->
+            <div id="view-security" class="hidden h-full overflow-auto p-4 md:p-6">
+                <div class="flex items-center justify-between gap-3 mb-5">
+                    <div><h2 class="text-lg font-bold" style="color:#e2e8f0">Security Overview</h2><p class="text-xs mt-1" style="color:#8899b4">Read-only configuration and exposure assessment</p></div>
+                    <button id="security-refresh" class="rn-btn-outline !min-h-auto py-2 px-3 inline-flex items-center gap-1.5"><span class="material-symbols-outlined" style="font-size:18px">refresh</span>Run scan</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+                    <div class="rn-card rn-card-glow p-5 md:col-span-1">
+                        <div class="text-xs uppercase font-semibold" style="color:#8899b4">Security score</div>
+                        <div id="security-score" class="text-4xl font-bold mt-2" style="color:#8899b4">--</div>
+                        <div id="security-score-label" class="text-xs mt-1" style="color:#8899b4">Scanning...</div>
+                    </div>
+                    <div class="rn-card p-5"><div class="text-xs uppercase font-semibold" style="color:#8899b4">Critical</div><div id="security-critical-count" class="text-3xl font-bold mt-2" style="color:#f87171">0</div></div>
+                    <div class="rn-card p-5"><div class="text-xs uppercase font-semibold" style="color:#8899b4">Warnings</div><div id="security-warning-count" class="text-3xl font-bold mt-2" style="color:#fbbf24">0</div></div>
+                    <div class="rn-card p-5"><div class="text-xs uppercase font-semibold" style="color:#8899b4">Passed</div><div id="security-pass-count" class="text-3xl font-bold mt-2" style="color:#34d399">0</div></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5" id="security-runtime">
+                    <div class="rn-card p-4"><div class="text-xs" style="color:#8899b4">Users</div><div id="security-users" class="text-xl font-semibold mt-1" style="color:#e2e8f0">--</div></div>
+                    <div class="rn-card p-4"><div class="text-xs" style="color:#8899b4">Administrators</div><div id="security-admins" class="text-xl font-semibold mt-1" style="color:#e2e8f0">--</div></div>
+                    <div class="rn-card p-4"><div class="text-xs" style="color:#8899b4">Active terminals</div><div id="security-terminals" class="text-xl font-semibold mt-1" style="color:#e2e8f0">--</div></div>
+                    <div class="rn-card p-4"><div class="text-xs" style="color:#8899b4">Runtime</div><div id="security-runtime-label" class="text-sm font-semibold mt-1 truncate" style="color:#e2e8f0">--</div></div>
+                </div>
+                <div class="flex items-center gap-2 mb-3"><span class="material-symbols-outlined" style="color:#3b82f6">verified_user</span><h3 class="font-semibold" style="color:#e2e8f0">Configuration checks</h3></div>
+                <div id="security-checks" class="space-y-3"><div class="rn-card p-6 text-center text-sm" style="color:#8899b4">Scanning security configuration...</div></div>
+            </div>
+
+        </main>
+    </div>
+</div>
+
+<!-- EDITOR MODAL -->
+<div id="editor-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+    <div class="rn-card w-full max-w-4xl h-3/4 flex flex-col mx-4" style="border-color:#2a3f66;box-shadow:0 25px 60px rgba(0,0,0,0.5)">
+        <div class="flex items-center justify-between px-5 py-3 border-b flex-shrink-0" style="border-color:#1a2744">
+            <div class="flex items-center gap-2"><span class="material-symbols-outlined" style="font-size:20px;color:#3b82f6">edit_note</span><h3 id="editor-title" class="font-medium text-sm" style="color:#e2e8f0">Edit File</h3></div>
+            <button id="editor-close" class="min-h-touch min-w-touch flex items-center justify-center rounded-lg transition" style="color:#8899b4"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <textarea id="editor-content" class="flex-1 p-5 text-sm resize-none border-none outline-none" style="font-family:'JetBrains Mono','Fira Code',monospace;background:#070d1a;color:#e2e8f0" spellcheck="false" wrap="off"></textarea>
+        <div class="flex justify-end gap-2 px-5 py-3 border-t flex-shrink-0" style="border-color:#1a2744">
+            <button id="editor-cancel" class="rn-btn-outline !min-h-auto py-2 px-4 text-sm">Cancel</button>
+            <button id="editor-save" class="!w-auto px-6 py-2 text-sm font-semibold rounded-lg text-white transition min-h-touch" style="background:linear-gradient(135deg,#3b82f6 0%,#2563eb 100%)">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  API CLIENT
+// ═══════════════════════════════════════════════════════════
+class ApiClient {
+    constructor() {
+        this.token = localStorage.getItem('ra_token') || null;
+    }
+
+    setToken(t) {
+        this.token = t;
+        localStorage.setItem('ra_token', t);
+    }
+
+    clearToken() {
+        this.token = null;
+        localStorage.removeItem('ra_token');
+    }
+
+    async request(method, path, body, isFormData) {
+        const headers = {};
+        if (this.token) headers['Authorization'] = 'Bearer ' + this.token;
+        if (!isFormData && body) headers['Content-Type'] = 'application/json';
+        const opts = { method, headers };
+        if (body !== null && body !== undefined) opts.body = isFormData ? body : JSON.stringify(body);
+        let res;
+        try {
+            res = await fetch(path, opts);
+        } catch (e) {
+            throw new Error('Network error \u2014 is the server running?');
+        }
+        if (res.status === 401) {
+            this.clearToken();
+            App.showAuth();
+            throw new Error('Session expired');
+        }
+        if (!res.ok) {
+            let detail = 'Request failed';
+            try { detail = (await res.json()).detail || detail; } catch {}
+            throw new Error(detail);
+        }
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return res.json();
+        return res;
+    }
+
+    // Auth
+    checkSetup()    { return this.request('GET', '/api/auth/setup-status'); }
+    setup(u, p)     { return this.request('POST', '/api/auth/setup', { username: u, password: p }); }
+    login(u, p)     { return this.request('POST', '/api/auth/login', { username: u, password: p }); }
+    me()            { return this.request('GET', '/api/auth/me'); }
+    getUsers()      { return this.request('GET', '/api/auth/users'); }
+    createUser(u, p){ return this.request('POST', '/api/auth/users', { username: u, password: p }); }
+    deleteUser(u)   { return this.request('DELETE', '/api/auth/users/' + encodeURIComponent(u)); }
+
+    // Files
+    listFiles(path) { return this.request('GET', '/api/files/list?path=' + encodeURIComponent(path)); }
+    mkdir(path)     { return this.request('POST', '/api/files/mkdir', { path }); }
+    deleteFile(path){ return this.request('DELETE', '/api/files/delete?path=' + encodeURIComponent(path)); }
+    renameFile(o, n){ return this.request('POST', '/api/files/rename', { old_path: o, new_path: n }); }
+    readFile(path)  { return this.request('GET', '/api/files/read?path=' + encodeURIComponent(path)); }
+    writeFile(p, c) { return this.request('POST', '/api/files/write', { path: p, content: c }); }
+    uploadFile(file, dir) {
+        const fd = new FormData();
+        fd.append('file', file);
+        return this.request('POST', '/api/files/upload?path=' + encodeURIComponent(dir), fd, true);
+    }
+    async downloadFile(path) {
+        try {
+            const data = await this.request('GET', '/api/files/download-token?path=' + encodeURIComponent(path));
+            const a = document.createElement('a');
+            a.href = '/api/files/download?path=' + encodeURIComponent(path) + '&token=' + encodeURIComponent(data.token);
+            a.download = path.split('/').pop() || 'download';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    // System
+    getStats() { return this.request('GET', '/api/system/stats'); }
+    getLogs(limit, level, search) {
+        const params = new URLSearchParams({ limit: String(limit || 250) });
+        if (level) params.set('level', level);
+        if (search) params.set('search', search);
+        return this.request('GET', '/api/logs?' + params.toString());
+    }
+    getSecurityStatus() { return this.request('GET', '/api/security/status'); }
+
+    // Terminal
+    terminalWsUrl(cols, rows) {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const params = new URLSearchParams({ token: this.token });
+        if (Number.isInteger(cols) && cols > 1) params.set('cols', String(cols));
+        if (Number.isInteger(rows) && rows > 0) params.set('rows', String(rows));
+        return proto + '//' + location.host + '/ws/terminal?' + params.toString();
+    }
+}
+
+const api = new ApiClient();
+
+// ═══════════════════════════════════════════════════════════
+//  ESCAPE HELPER
+// ═══════════════════════════════════════════════════════════
+function _esc(s) {
+    if (s === null || s === undefined) return '';
+    const d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  FILE MANAGER
+// ═══════════════════════════════════════════════════════════
+class FileManager {
+    constructor() {
+        this.currentPath = '/';
+        this.editorPath = null;
+        this.editorModified = false;
+    }
+
+    async navigate(path) {
+        if (path === '' || path === '/') path = '/';
+        try {
+            const data = await api.listFiles(path);
+            // CRITICAL: use the server-resolved path so child paths build correctly
+            // (on Windows the server returns backslash paths like C:\Users\...)
+            this.currentPath = data.path;
+            this._renderBreadcrumb(data.path);
+            this._renderFiles(data.entries);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    _renderBreadcrumb(path) {
+        const el = document.getElementById('breadcrumb');
+        if (!el) return;
+        // Normalize: split on both / and \ for cross-platform support
+        const separator = path.includes('\\') ? '\\' : '/';
+        const isRoot = (separator === '/' && path === '/') || (separator === '\\' && /^[A-Za-z]:\\$/.test(path));
+        if (isRoot) {
+            el.innerHTML = '<span class="breadcrumb-seg" data-path="' + _esc(path) + '">' + _esc(path) + '</span>';
+            el.querySelector('.breadcrumb-seg').addEventListener('click', function() { fileManager.navigate(path); });
+            return;
+        }
+        const parts = path.split(separator).filter(Boolean);
+        // On Windows, first part is the drive letter (e.g. "C:")
+        const drivePrefix = (separator === '\\' && parts.length > 0) ? parts[0] + separator : '';
+        const displayParts = (separator === '\\') ? parts.slice(1) : parts;
+        let html = '<span class="breadcrumb-seg" data-path="' + _esc(path) + '">' + _esc(path) + '</span>';
+        let accumulated = drivePrefix;
+        for (const p of displayParts) {
+            accumulated += p + separator;
+            // Remove trailing separator for the API call
+            let navPath = accumulated.replace(/[\\/]+$/, '');
+            if (separator === '\\' && drivePrefix) navPath = drivePrefix + navPath.substring(drivePrefix.length);
+            html += ' <span style="color:#1e3050">' + (separator === '\\' ? '\\' : '/') + '</span> ';
+            html += '<span class="breadcrumb-seg" data-path="' + _esc(navPath) + '">' + _esc(p) + '</span>';
+        }
+        el.innerHTML = html;
+        el.querySelectorAll('.breadcrumb-seg').forEach(function(seg) {
+            seg.addEventListener('click', function() { fileManager.navigate(seg.dataset.path); });
+        });
+    }
+
+    _renderFiles(entries) {
+        const el = document.getElementById('file-list');
+        if (!el) return;
+        if (entries.length === 0) {
+            el.innerHTML = '<div class="text-center py-16" style="color:#8899b4"><span class="material-symbols-outlined block mb-3" style="font-size:56px;color:#1e3050">folder_off</span><p class="text-sm font-medium" style="color:#64788e">This directory is empty</p><p class="text-xs mt-1" style="color:#4a5e80">Drop files here or use the toolbar to add content</p></div>';
+            return;
+        }
+        let html = '<div class="file-row file-grid px-4 py-2 text-xs font-semibold uppercase tracking-wider border-b" style="color:#8899b4;border-color:#1a2744">';
+        html += '<div>Name</div><div class="text-right">Size</div><div class="text-right">Modified</div><div class="text-right">Actions</div></div>';
+
+        for (const entry of entries) {
+            const isDir = entry.type === 'directory';
+            const iconColor = isDir ? 'color:#3b82f6' : 'color:#64788e';
+            const iconName = isDir ? 'folder' : 'description';
+            const size = isDir ? '--' : this._fmtSize(entry.size);
+            const mod = entry.modified ? new Date(entry.modified * 1000).toLocaleString() : '';
+            // Use the OS-appropriate separator from the current path
+            const sep = this.currentPath.includes('\\') ? '\\' : '/';
+            const fullPath = (this.currentPath === '/' || this.currentPath === '\\') 
+                ? sep + entry.name 
+                : this.currentPath + sep + entry.name;
+
+            // Use data-attributes instead of inline ondblclick (fixes quote-breaking bugs on Windows paths)
+            html += '<div class="file-row file-grid px-4 py-2.5 items-center border-b cursor-pointer group" style="border-color:rgba(26,39,68,0.5)" data-fpath="' + _esc(fullPath) + '" data-ftype="' + _esc(entry.type) + '">';
+            html += '<div class="file-name-cell flex items-center gap-2.5">';
+            html += '<span class="material-symbols-outlined flex-shrink-0" style="font-size:20px;' + iconColor + '">' + iconName + '</span>';
+            html += '<span class="file-name-text" title="' + _esc(entry.name) + '">' + _esc(entry.name) + '</span>';
+            if (entry.error) html += '<span class="text-xs flex-shrink-0" style="color:#f87171">(locked)</span>';
+            html += '</div>';
+            html += '<div class="text-right text-sm" style="color:#8899b4">' + size + '</div>';
+            html += '<div class="text-right text-sm truncate" style="color:#8899b4" title="' + _esc(mod) + '">' + mod + '</div>';
+            // Action buttons — visible on hover
+            html += '<div class="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">';
+            if (isDir) {
+                html += '<button class="fm-act" data-act="open" title="Open"><span class="material-symbols-outlined" style="font-size:18px;color:#3b82f6">folder_open</span></button>';
+            } else {
+                html += '<button class="fm-act" data-act="edit" title="Edit"><span class="material-symbols-outlined" style="font-size:18px;color:#8899b4">edit</span></button>';
+                html += '<button class="fm-act" data-act="download" title="Download"><span class="material-symbols-outlined" style="font-size:18px;color:#8899b4">download</span></button>';
+            }
+            html += '<button class="fm-act" data-act="rename" title="Rename"><span class="material-symbols-outlined" style="font-size:18px;color:#8899b4">drive_file_rename_outline</span></button>';
+            html += '<button class="fm-act" data-act="delete" title="Delete"><span class="material-symbols-outlined" style="font-size:18px;color:#f87171">delete</span></button>';
+            html += '</div></div>';
+        }
+        el.innerHTML = html;
+        // Re-bind events since innerHTML was replaced
+        this._bindEvents(el);
+    }
+
+    _bindEvents(el) {
+        // Event delegation on the parent — works with any innerHTML replacement.
+        // Safe to call multiple times; listeners are only attached once.
+        if (!el) el = document.getElementById('file-list');
+        if (!el || el._evBound) return;
+        el._evBound = true;
+
+        // Double-click: navigate into directory or open file
+        el.addEventListener('dblclick', function(e) {
+            const row = e.target.closest('[data-fpath]');
+            if (!row) return;
+            // Don't fire if an action button was the target
+            if (e.target.closest('.fm-act')) return;
+            const p = row.dataset.fpath, t = row.dataset.ftype;
+            if (t === 'directory') fileManager.navigate(p);
+            else fileManager.openFile(p);
+        });
+
+        // Single-click: action buttons (edit, download, rename, delete, open)
+        el.addEventListener('click', function(e) {
+            const btn = e.target.closest('.fm-act');
+            if (!btn) return;
+            e.stopPropagation();
+            const row = btn.closest('[data-fpath]');
+            if (!row) return;
+            const p = row.dataset.fpath;
+            const n = p.replace(/[\\/]/g, '/').split('/').pop();
+            const act = btn.dataset.act;
+            if (act === 'open') fileManager.navigate(p);
+            else if (act === 'edit') fileManager.openFile(p);
+            else if (act === 'download') api.downloadFile(p);
+            else if (act === 'rename') fileManager._promptRename(p, n);
+            else if (act === 'delete') fileManager._confirmDelete(p, n);
+        });
+
+        // Right-click context menu
+        el.addEventListener('contextmenu', function(e) {
+            const row = e.target.closest('[data-fpath]');
+            if (!row) return;
+            e.preventDefault();
+            fileManager._showCtxMenu(e, row.dataset.fpath, row.dataset.ftype);
+        });
+    }
+
+    _showCtxMenu(event, fullPath, type, name) {
+        this._hideCtxMenu();
+        if (!name) name = fullPath.replace(/[\\/]/g, '/').split('/').pop();
+        const menu = document.createElement('div');
+        menu.id = 'ctx-menu';
+        menu.className = 'ctx-menu';
+        menu.style.left = event.clientX + 'px';
+        menu.style.top = event.clientY + 'px';
+
+        function addBtn(icon, label, color, fn) {
+            const b = document.createElement('button');
+            b.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;color:' + (color || '#8899b4') + '">' + icon + '</span>' + _esc(label);
+            b.addEventListener('click', function(e) { e.stopPropagation(); fn(); fileManager._hideCtxMenu(); });
+            menu.appendChild(b);
+        }
+
+        if (type === 'directory') {
+            addBtn('folder_open', 'Open', '#3b82f6', function() { fileManager.navigate(fullPath); });
+        } else {
+            addBtn('edit', 'Edit', '#8899b4', function() { fileManager.openFile(fullPath); });
+            addBtn('download', 'Download', '#8899b4', function() { api.downloadFile(fullPath); });
+        }
+        addBtn('drive_file_rename_outline', 'Rename', '#8899b4', function() { fileManager._promptRename(fullPath, name); });
+        const hr = document.createElement('hr');
+        menu.appendChild(hr);
+        addBtn('delete', 'Delete', '#f87171', function() { fileManager._confirmDelete(fullPath, name); });
+
+        document.body.appendChild(menu);
+
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+        if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+
+        setTimeout(function() { document.addEventListener('click', fileManager._hideCtxMenu, { once: true }); }, 0);
+    }
+
+    _hideCtxMenu() {
+        const m = document.getElementById('ctx-menu');
+        if (m) m.remove();
+    }
+
+    async openFile(path) {
+        try {
+            const data = await api.readFile(path);
+            this._openEditor(path, data.content);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    _openEditor(path, content) {
+        this.editorPath = path;
+        this.editorModified = false;
+        document.getElementById('editor-title').textContent = 'Edit: ' + path.split('/').pop();
+        document.getElementById('editor-content').value = content;
+        document.getElementById('editor-modal').classList.remove('hidden');
+        document.getElementById('editor-content').oninput = function() { fileManager.editorModified = true; };
+    }
+
+    async _saveEditor() {
+        if (!this.editorPath) return;
+        const content = document.getElementById('editor-content').value;
+        try {
+            await api.writeFile(this.editorPath, content);
+            this.editorModified = false;
+            App.toast('File saved', 'success');
+            this._closeEditor();
+            this.navigate(this.currentPath);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    _closeEditor() {
+        if (this.editorModified && !confirm('You have unsaved changes. Close anyway?')) return;
+        document.getElementById('editor-modal').classList.add('hidden');
+        this.editorPath = null;
+        this.editorModified = false;
+    }
+
+    async _promptRename(oldPath, name) {
+        const newName = prompt('New name:', name);
+        if (!newName || newName === name) return;
+        const sep = oldPath.includes('\\') ? '\\' : '/';
+        const parent = oldPath.substring(0, oldPath.lastIndexOf(sep)) || (sep === '\\' ? oldPath.substring(0, 3) : '/');
+        const newPath = parent + sep + newName;
+        try {
+            await api.renameFile(oldPath, newPath);
+            App.toast('Renamed', 'success');
+            this.navigate(this.currentPath);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    async _confirmDelete(path, name) {
+        if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+        try {
+            await api.deleteFile(path);
+            App.toast('Deleted', 'success');
+            this.navigate(this.currentPath);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    async _promptNewFolder() {
+        const name = prompt('Folder name:');
+        if (!name) return;
+        const sep = this.currentPath.includes('\\') ? '\\' : '/';
+        const path = (this.currentPath === '/' || this.currentPath === '\\') 
+            ? sep + name 
+            : this.currentPath + sep + name;
+        try {
+            await api.mkdir(path);
+            App.toast('Folder created', 'success');
+            this.navigate(this.currentPath);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    async _promptNewFile() {
+        const name = prompt('File name:');
+        if (!name) return;
+        const sep = this.currentPath.includes('\\') ? '\\' : '/';
+        const path = (this.currentPath === '/' || this.currentPath === '\\') 
+            ? sep + name 
+            : this.currentPath + sep + name;
+        try {
+            await api.writeFile(path, '');
+            App.toast('File created', 'success');
+            this.navigate(this.currentPath);
+            this.openFile(path);
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    }
+
+    _triggerUpload() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.multiple = true;
+        input.onchange = async function() {
+            for (const file of input.files) {
+                try {
+                    await api.uploadFile(file, fileManager.currentPath);
+                    App.toast('Uploaded: ' + file.name, 'success');
+                } catch (e) {
+                    App.toast('Upload failed: ' + e.message, 'error');
+                }
+            }
+            fileManager.navigate(fileManager.currentPath);
+        };
+        input.click();
+    }
+
+    _fmtSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + u[i];
+    }
+
+    _initDragDrop() {
+        const el = document.getElementById('file-list');
+        if (!el || el._ddBound) return;
+        el._ddBound = true;
+        el.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.add('drop-active');
+        });
+        el.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!el.contains(e.relatedTarget)) el.classList.remove('drop-active');
+        });
+        el.addEventListener('drop', async function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove('drop-active');
+            const files = e.dataTransfer.files;
+            if (files.length === 0) return;
+            for (const file of files) {
+                try {
+                    await api.uploadFile(file, fileManager.currentPath);
+                    App.toast('Uploaded: ' + file.name, 'success');
+                } catch (err) {
+                    App.toast('Upload failed: ' + err.message, 'error');
+                }
+            }
+            fileManager.navigate(fileManager.currentPath);
+        });
+    }
+}
+
+const fileManager = new FileManager();
+
+
+// ═══════════════════════════════════════════════════════════
+//  TERMINAL
+// ═══════════════════════════════════════════════════════════
+class RnTerminal {
+    constructor(containerEl, statusEl) {
+        this.container = containerEl;
+        this.statusEl = statusEl;
+        this.term = null;
+        this.ws = null;
+        this.fitAddon = null;
+        this._reconnectTimer = null;
+        this._inited = false;
+    }
+
+    init() {
+        if (this._inited) {
+            this.fitAddon.fit();
+            this._sendResize();
+            this.focus();
+            return;
+        }
+        this._inited = true;
+        this.term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
+            theme: this._getTheme(),
+            allowProposedApi: true,
+            scrollback: 5000,
+            lineHeight: 1.15,
+        });
+        this.fitAddon = new FitAddon.FitAddon();
+        this.term.loadAddon(this.fitAddon);
+        this.term.open(this.container);
+
+        // Use ResizeObserver to reliably detect container size changes
+        this._resizeObserver = new ResizeObserver(() => {
+            if (this.term) {
+                this.fitAddon.fit();
+                this._sendResize();
+            }
+        });
+        this._resizeObserver.observe(this.container);
+
+        // Initial fit + connect after layout settles
+        setTimeout(() => {
+            this.fitAddon.fit();
+            this._connect();
+        }, 100);
+
+        this.term.onData(function(data) {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(new TextEncoder().encode(data));
+            }
+        }.bind(this));
+
+        // onResize fires when FitAddon changes the terminal dimensions
+        this.term.onResize(function({ cols, rows }) {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send('resize:' + cols + ':' + rows);
+            }
+        }.bind(this));
+    }
+
+    _sendResize() {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.term) {
+            this.ws.send('resize:' + this.term.cols + ':' + this.term.rows);
+        }
+    }
+
+    _connect() {
+        if (!api.token) return;
+        // Include the fitted size in the handshake. PowerShell lays out its
+        // first prompt immediately, so resizing only after the socket opens
+        // can leave PSReadLine using the old, narrow terminal width.
+        this.fitAddon.fit();
+        this.ws = new WebSocket(api.terminalWsUrl(this.term.cols, this.term.rows));
+        this.ws.binaryType = 'arraybuffer';
+        this._setStatus('connecting', 'Connecting...');
+
+        this.ws.onopen = function() {
+            this._setStatus('connected', 'Connected');
+            // Send initial resize after fit has run
+            this.fitAddon.fit();
+            this._sendResize();
+        }.bind(this);
+
+        this.ws.onmessage = function(event) {
+            if (event.data instanceof ArrayBuffer) {
+                this.term.write(new Uint8Array(event.data));
+            } else {
+                this.term.write(event.data);
+            }
+        }.bind(this);
+
+        this.ws.onclose = function(event) {
+            this._setStatus('disconnected', 'Disconnected (code ' + event.code + ')');
+            this._reconnectTimer = setTimeout(() => this._connect(), 3000);
+        }.bind(this);
+
+        this.ws.onerror = function() {
+            this._setStatus('error', 'Connection error');
+        }.bind(this);
+    }
+
+    _setStatus(state, text) {
+        if (!this.statusEl) return;
+        const dot = this.statusEl.querySelector('.status-dot');
+        const label = this.statusEl.querySelector('.status-label');
+        dot.className = 'status-dot w-2 h-2 rounded-full mr-2 flex-shrink-0';
+        if (state === 'connected') {
+            dot.style.background = '#34d399';
+            dot.style.animation = 'none';
+        } else if (state === 'connecting') {
+            dot.style.background = '#fbbf24';
+            dot.style.animation = 'pulse-dot 1.5s infinite';
+        } else {
+            dot.style.background = '#ef4444';
+            dot.style.animation = 'none';
+        }
+        if (label) label.textContent = text;
+    }
+
+    _getTheme() {
+        return { background: '#070d1a', foreground: '#dae2fd', cursor: '#3b82f6', cursorAccent: '#070d1a', selectionBackground: 'rgba(59,130,246,0.3)' };
+    }
+
+    updateTheme() {
+        if (this.term) this.term.options.theme = this._getTheme();
+    }
+
+    focus() {
+        if (this.term) this.term.focus();
+    }
+
+    destroy() {
+        clearTimeout(this._reconnectTimer);
+        if (this._resizeObserver) this._resizeObserver.disconnect();
+        if (this.ws) this.ws.close();
+        if (this.term) this.term.dispose();
+        this.term = null;
+        this.ws = null;
+        this._resizeObserver = null;
+        this._inited = false;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════
+//  SYSTEM MONITOR
+// ═══════════════════════════════════════════════════════════
+class SystemMonitor {
+    constructor() {
+        this.interval = null;
+    }
+
+    start() {
+        this.refresh();
+        this.interval = setInterval(() => this.refresh(), 3000);
+    }
+
+    stop() {
+        clearInterval(this.interval);
+        this.interval = null;
+    }
+
+    async refresh() {
+        try {
+            const s = await api.getStats();
+            this._renderCpu(s.cpu_percent, s.cpu_count_logical, s.cpu_count_physical);
+            this._renderMem(s.memory);
+            this._renderDisk(s.disk);
+            this._renderInfo(s);
+        } catch (e) {
+            console.error('Monitor error:', e);
+        }
+    }
+
+    _renderCpu(pct, logical, physical) {
+        const bar = document.getElementById('cpu-bar');
+        const val = document.getElementById('cpu-value');
+        if (bar) bar.style.width = pct + '%';
+        if (val) val.textContent = pct.toFixed(1) + '%';
+        const det = document.getElementById('cpu-detail');
+        if (det) det.textContent = (physical || '?') + ' cores / ' + (logical || '?') + ' threads';
+    }
+
+    _renderMem(m) {
+        const bar = document.getElementById('mem-bar');
+        const val = document.getElementById('mem-value');
+        if (bar) bar.style.width = m.percent + '%';
+        if (val) val.textContent = m.percent.toFixed(1) + '%';
+        const det = document.getElementById('mem-detail');
+        if (det) det.textContent = this._fmt(m.used) + ' / ' + this._fmt(m.total);
+    }
+
+    _renderDisk(d) {
+        const bar = document.getElementById('disk-bar');
+        const val = document.getElementById('disk-value');
+        if (bar) bar.style.width = d.percent + '%';
+        if (val) val.textContent = d.percent.toFixed(1) + '%';
+        const det = document.getElementById('disk-detail');
+        if (det) det.textContent = this._fmt(d.used) + ' / ' + this._fmt(d.total);
+    }
+
+    _renderInfo(s) {
+        const el = document.getElementById('sys-info');
+        if (!el) return;
+        el.innerHTML = '<tr><td class="pr-4 py-1.5 font-medium w-32" style="color:#8899b4">Hostname</td><td class="py-1.5 font-mono" style="color:#e2e8f0">' + _esc(s.hostname) + '</td></tr>'
+            + '<tr><td class="pr-4 py-1.5 font-medium" style="color:#8899b4">Platform</td><td class="py-1.5 font-mono" style="color:#e2e8f0">' + _esc(s.platform) + '</td></tr>'
+            + '<tr><td class="pr-4 py-1.5 font-medium" style="color:#8899b4">Uptime</td><td id="sys-uptime" class="py-1.5 font-mono" style="color:#e2e8f0">' + _esc(s.uptime) + '</td></tr>';
+    }
+
+    _fmt(bytes) {
+        if (bytes === 0) return '0 B';
+        const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + u[i];
+    }
+}
+
+const monitor = new SystemMonitor();
+
+
+// ═══════════════════════════════════════════════════════════
+//  APP CONTROLLER
+// ═══════════════════════════════════════════════════════════
+const App = {
+    user: null,
+    currentView: 'home',
+    terminal: null,
+    logsTimer: null,
+    logsSearchTimer: null,
+
+    init() {
+        // Bind nav links
+        document.querySelectorAll('.nav-link[data-view]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const view = btn.dataset.view;
+                if (view === 'logout') {
+                    App.logout();
+                } else {
+                    App.switchView(view);
+                }
+            });
+        });
+
+        // Auth forms
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            App._handleLogin();
+        });
+        document.getElementById('setup-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            App._handleSetup();
+        });
+        document.getElementById('show-setup-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            document.getElementById('login-card').classList.add('hidden');
+            document.getElementById('setup-card').classList.remove('hidden');
+        });
+        document.getElementById('show-login-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            document.getElementById('setup-card').classList.add('hidden');
+            document.getElementById('login-card').classList.remove('hidden');
+        });
+
+        // Editor
+        document.getElementById('editor-close').addEventListener('click', function() { fileManager._closeEditor(); });
+        document.getElementById('editor-cancel').addEventListener('click', function() { fileManager._closeEditor(); });
+        document.getElementById('editor-save').addEventListener('click', function() { fileManager._saveEditor(); });
+
+        // File toolbar
+        document.getElementById('btn-upload').addEventListener('click', function() { fileManager._triggerUpload(); });
+        document.getElementById('btn-new-folder').addEventListener('click', function() { fileManager._promptNewFolder(); });
+        document.getElementById('btn-new-file').addEventListener('click', function() { fileManager._promptNewFile(); });
+
+        // Logs and security controls
+        document.getElementById('logs-refresh').addEventListener('click', function() { App._loadLogs(); });
+        document.getElementById('logs-level').addEventListener('change', function() { App._loadLogs(); });
+        document.getElementById('logs-search').addEventListener('input', function() {
+            clearTimeout(App.logsSearchTimer);
+            App.logsSearchTimer = setTimeout(function() { App._loadLogs(); }, 250);
+        });
+        document.getElementById('security-refresh').addEventListener('click', function() { App._loadSecurity(); });
+
+        // Logout
+        document.getElementById('logout-btn').addEventListener('click', function() { App.logout(); });
+
+        // Init drag-drop and file list event delegation
+        fileManager._initDragDrop();
+        fileManager._bindEvents();
+
+        // Check session
+        if (api.token) {
+            api.me().then(function(data) {
+                App.user = data;
+                App._showApp();
+            }).catch(function() {
+                App.showAuth();
+            });
+        } else {
+            App.showAuth();
+        }
+    },
+
+    // Auth
+    showAuth() {
+        document.getElementById('auth-screen').classList.remove('hidden');
+        document.getElementById('app-screen').classList.add('hidden');
+        monitor.stop();
+        api.checkSetup().then(function(data) {
+            if (!data.setup_done) {
+                document.getElementById('setup-card').classList.remove('hidden');
+                document.getElementById('login-card').classList.add('hidden');
+            } else {
+                document.getElementById('login-card').classList.remove('hidden');
+                document.getElementById('setup-card').classList.add('hidden');
+            }
+        }).catch(function() {
+            document.getElementById('login-card').classList.remove('hidden');
+        });
+    },
+
+    async _handleLogin() {
+        const u = document.getElementById('login-username').value.trim();
+        const p = document.getElementById('login-password').value;
+        if (!u || !p) return;
+        const btn = document.getElementById('login-submit');
+        btn.disabled = true;
+        btn.textContent = 'Signing in...';
+        try {
+            const data = await api.login(u, p);
+            api.setToken(data.access_token);
+            App.user = data.user;
+            App._showApp();
+        } catch (e) {
+            App.toast(e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Sign In';
+        }
+    },
+
+    async _handleSetup() {
+        const u = document.getElementById('setup-username').value.trim();
+        const p = document.getElementById('setup-password').value;
+        const c = document.getElementById('setup-confirm').value;
+        if (!u || !p) return;
+        if (p !== c) { App.toast('Passwords do not match', 'error'); return; }
+        const btn = document.getElementById('setup-submit');
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+        try {
+            await api.setup(u, p);
+            App.toast('Admin created! You can now log in.', 'success');
+            document.getElementById('setup-card').classList.add('hidden');
+            document.getElementById('login-card').classList.remove('hidden');
+            document.getElementById('login-username').value = u;
+        } catch (e) {
+            App.toast(e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Create Administrator';
+        }
+    },
+
+    _showApp() {
+        document.getElementById('auth-screen').classList.add('hidden');
+        document.getElementById('app-screen').classList.remove('hidden');
+        document.getElementById('user-display').textContent = this.user.username;
+        document.getElementById('user-avatar').textContent = this.user.username.charAt(0).toUpperCase();
+
+        const isAdmin = this.user.role === 'admin';
+        document.getElementById('settings-users-section').classList.toggle('hidden', !isAdmin);
+        document.getElementById('admin-nav-terminal').classList.toggle('hidden', !isAdmin);
+        document.getElementById('admin-nav-settings').classList.toggle('hidden', !isAdmin);
+        document.getElementById('admin-nav-logs').classList.toggle('hidden', !isAdmin);
+        document.getElementById('admin-nav-security').classList.toggle('hidden', !isAdmin);
+
+        // Show WS URL
+        const wsEl = document.getElementById('ws-url-display');
+        if (wsEl) wsEl.textContent = api.terminalWsUrl().split('?')[0];
+
+        this.switchView('home');
+    },
+
+    logout() {
+        if (this.terminal) this.terminal.destroy();
+        this.terminal = null;
+        monitor.stop();
+        clearInterval(this.logsTimer);
+        this.logsTimer = null;
+        api.clearToken();
+        this.user = null;
+        this.showAuth();
+    },
+
+    switchView(view) {
+        const adminOnlyViews = ['terminal', 'settings', 'logs', 'security'];
+        if (adminOnlyViews.includes(view) && (!this.user || this.user.role !== 'admin')) {
+            this.toast('Administrator access required', 'error');
+            view = 'home';
+        }
+        const prevView = this.currentView;
+        this.currentView = view;
+
+        // Hide all panels
+        document.querySelectorAll('[id^="view-"]').forEach(function(el) { el.classList.add('hidden'); });
+
+        // Show target
+        const panel = document.getElementById('view-' + view);
+        if (panel) panel.classList.remove('hidden');
+
+        // Update nav active state
+        document.querySelectorAll('.nav-link').forEach(function(el) { el.classList.remove('active'); });
+        const activeBtn = document.querySelector('.nav-link[data-view="' + view + '"]');
+        if (activeBtn) activeBtn.classList.add('active');
+
+        // Lifecycle hooks
+        monitor.stop();
+        clearInterval(this.logsTimer);
+        this.logsTimer = null;
+
+        if (view === 'home') {
+            // Set breadcrumb for home
+            document.getElementById('breadcrumb').innerHTML = '<span class="font-medium" style="color:#e2e8f0">System Overview</span>';
+            monitor.start();
+        } else if (view === 'files') {
+            fileManager.navigate(fileManager.currentPath || '/');
+        } else if (view === 'terminal') {
+            // Set breadcrumb for terminal
+            document.getElementById('breadcrumb').innerHTML = '<span class="font-medium" style="color:#e2e8f0">Terminal</span>';
+            if (!this.terminal) {
+                this.terminal = new RnTerminal(
+                    document.getElementById('terminal-container'),
+                    document.getElementById('terminal-status')
+                );
+            }
+            this.terminal.init();
+            setTimeout(function() { if (App.terminal) App.terminal.focus(); }, 100);
+        } else if (view === 'settings') {
+            document.getElementById('breadcrumb').innerHTML = '<span class="font-medium" style="color:#e2e8f0">Settings</span>';
+            if (this.user && this.user.role === 'admin') this._loadUsers();
+        } else if (view === 'logs') {
+            document.getElementById('breadcrumb').innerHTML = '<span class="font-medium" style="color:#e2e8f0">Server Logs</span>';
+            this._loadLogs();
+            this.logsTimer = setInterval(function() { App._loadLogs(true); }, 5000);
+        } else if (view === 'security') {
+            document.getElementById('breadcrumb').innerHTML = '<span class="font-medium" style="color:#e2e8f0">Security Overview</span>';
+            this._loadSecurity();
+        }
+
+        // Close sidebar on mobile after nav
+        if (window.innerWidth < 768) this._closeSidebar();
+    },
+
+    async _loadLogs(silent) {
+        const listEl = document.getElementById('logs-list');
+        const statusEl = document.getElementById('logs-status');
+        if (!listEl || this.currentView !== 'logs') return;
+        if (!silent) statusEl.textContent = 'Refreshing...';
+        try {
+            const level = document.getElementById('logs-level').value;
+            const search = document.getElementById('logs-search').value.trim();
+            const data = await api.getLogs(500, level, search);
+            document.getElementById('logs-info-count').textContent = data.counts.INFO || 0;
+            document.getElementById('logs-warning-count').textContent = data.counts.WARNING || 0;
+            document.getElementById('logs-error-count').textContent = data.counts.ERROR || 0;
+            statusEl.textContent = data.matched + ' matching events · ' + data.stored + ' retained · auto-refresh 5s';
+
+            if (!data.entries.length) {
+                listEl.innerHTML = '<tr><td colspan="4" class="px-4 py-10 text-center" style="color:#8899b4">No log events match these filters.</td></tr>';
+                return;
+            }
+            const levelStyles = {
+                INFO: 'background:rgba(59,130,246,0.14);color:#60a5fa',
+                WARNING: 'background:rgba(245,158,11,0.14);color:#fbbf24',
+                ERROR: 'background:rgba(248,113,113,0.14);color:#f87171',
+                CRITICAL: 'background:rgba(248,113,113,0.2);color:#fca5a5',
+            };
+            listEl.innerHTML = data.entries.map(function(entry) {
+                const time = new Date(entry.timestamp).toLocaleString();
+                const badgeStyle = levelStyles[entry.level] || levelStyles.INFO;
+                return '<tr>'
+                    + '<td class="px-4 py-3 whitespace-nowrap font-mono text-xs" style="color:#8899b4">' + _esc(time) + '</td>'
+                    + '<td class="px-4 py-3"><span class="px-2 py-1 rounded text-xs font-semibold" style="' + badgeStyle + '">' + _esc(entry.level) + '</span></td>'
+                    + '<td class="px-4 py-3 font-mono text-xs whitespace-nowrap" style="color:#60a5fa">' + _esc(entry.logger) + '</td>'
+                    + '<td class="px-4 py-3 font-mono text-xs" style="color:#c8d6e5;white-space:pre-wrap;word-break:break-word">' + _esc(entry.message) + '</td>'
+                    + '</tr>';
+            }).join('');
+        } catch (e) {
+            statusEl.textContent = 'Unable to load logs';
+            listEl.innerHTML = '<tr><td colspan="4" class="px-4 py-10 text-center" style="color:#f87171">' + _esc(e.message) + '</td></tr>';
+        }
+    },
+
+    async _loadSecurity() {
+        const checksEl = document.getElementById('security-checks');
+        if (!checksEl || this.currentView !== 'security') return;
+        checksEl.innerHTML = '<div class="rn-card p-6 text-center text-sm" style="color:#8899b4">Scanning security configuration...</div>';
+        try {
+            const data = await api.getSecurityStatus();
+            const scoreEl = document.getElementById('security-score');
+            const scoreColor = data.score >= 80 ? '#34d399' : (data.score >= 50 ? '#fbbf24' : '#f87171');
+            const scoreLabel = data.score >= 80 ? 'Strong posture' : (data.score >= 50 ? 'Needs attention' : 'High risk');
+            scoreEl.textContent = data.score + '/100';
+            scoreEl.style.color = scoreColor;
+            document.getElementById('security-score-label').textContent = scoreLabel;
+            document.getElementById('security-critical-count').textContent = data.counts.critical || 0;
+            document.getElementById('security-warning-count').textContent = data.counts.warning || 0;
+            document.getElementById('security-pass-count').textContent = data.counts.pass || 0;
+            document.getElementById('security-users').textContent = data.runtime.users;
+            document.getElementById('security-admins').textContent = data.runtime.administrators;
+            document.getElementById('security-terminals').textContent = data.runtime.active_terminal_sessions;
+            document.getElementById('security-runtime-label').textContent = 'Python ' + data.runtime.python + ' · ' + data.runtime.hostname;
+            document.getElementById('security-runtime-label').title = data.runtime.platform;
+
+            const statusMeta = {
+                pass: { icon: 'check_circle', color: '#34d399', label: 'Passed' },
+                warning: { icon: 'warning', color: '#fbbf24', label: 'Warning' },
+                critical: { icon: 'error', color: '#f87171', label: 'Critical' },
+            };
+            checksEl.innerHTML = data.checks.map(function(check) {
+                const meta = statusMeta[check.status] || statusMeta.warning;
+                const recommendation = check.recommendation
+                    ? '<div class="text-xs mt-2" style="color:#c8d6e5"><span style="color:#8899b4">Recommendation:</span> ' + _esc(check.recommendation) + '</div>'
+                    : '';
+                return '<div class="security-check ' + _esc(check.status) + ' rn-card p-4">'
+                    + '<div class="flex items-start gap-3"><span class="material-symbols-outlined flex-shrink-0" style="color:' + meta.color + '">' + meta.icon + '</span>'
+                    + '<div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><h4 class="font-semibold text-sm" style="color:#e2e8f0">' + _esc(check.title) + '</h4><span class="text-xs font-medium" style="color:' + meta.color + '">' + meta.label + '</span></div>'
+                    + '<p class="text-xs mt-1" style="color:#8899b4">' + _esc(check.detail) + '</p>' + recommendation + '</div></div></div>';
+            }).join('');
+        } catch (e) {
+            checksEl.innerHTML = '<div class="rn-card p-6 text-center text-sm" style="color:#f87171">' + _esc(e.message) + '</div>';
+        }
+    },
+
+    // User management
+    async _loadUsers() {
+        if (!this.user || this.user.role !== 'admin') return;
+        try {
+            const users = await api.getUsers();
+            const el = document.getElementById('users-list');
+            if (!el) return;
+            el.innerHTML = users.map(function(u) {
+                const roleBadge = u.role === 'admin'
+                    ? '<span class="px-2 py-0.5 rounded text-xs font-medium" style="background:rgba(59,130,246,0.15);color:#3b82f6">' + _esc(u.role) + '</span>'
+                    : '<span class="px-2 py-0.5 rounded text-xs font-medium" style="background:rgba(30,45,74,0.5);color:#8899b4">' + _esc(u.role) + '</span>';
+                const dirs = u.allowed_dirs && u.allowed_dirs.length ? u.allowed_dirs.join(', ') : 'All';
+                const created = new Date(u.created_at).toLocaleDateString();
+                const deleteBtn = u.role !== 'admin'
+                    ? '<button onclick="App._deleteUser(\'' + _esc(u.username) + '\')" class="text-sm font-medium" style="color:#f87171">Delete</button>'
+                    : '';
+                return '<tr class="border-b" style="border-color:rgba(26,39,68,0.5)">'
+                    + '<td class="py-2.5 px-4 font-mono text-sm" style="color:#e2e8f0">' + _esc(u.username) + '</td>'
+                    + '<td class="py-2.5 px-4">' + roleBadge + '</td>'
+                    + '<td class="py-2.5 px-4 text-sm font-mono" style="color:#8899b4">' + _esc(dirs) + '</td>'
+                    + '<td class="py-2.5 px-4 text-sm" style="color:#8899b4">' + created + '</td>'
+                    + '<td class="py-2.5 px-4 text-right">' + deleteBtn + '</td>'
+                    + '</tr>';
+            }).join('');
+        } catch (e) {
+            console.error(e);
+        }
+    },
+
+    async _addUser() {
+        const u = document.getElementById('new-user-name').value.trim();
+        const p = document.getElementById('new-user-pass').value;
+        if (!u || !p) return;
+        try {
+            await api.createUser(u, p);
+            App.toast('User \'' + u + '\' created', 'success');
+            document.getElementById('new-user-name').value = '';
+            document.getElementById('new-user-pass').value = '';
+            this._loadUsers();
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    },
+
+    async _deleteUser(username) {
+        if (!confirm('Delete user \'' + username + '\'?')) return;
+        try {
+            await api.deleteUser(username);
+            App.toast('User \'' + username + '\' deleted', 'success');
+            this._loadUsers();
+        } catch (e) {
+            App.toast(e.message, 'error');
+        }
+    },
+
+    // Sidebar
+    _toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        sidebar.classList.toggle('-translate-x-full');
+        overlay.classList.toggle('show');
+    },
+
+    _closeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (window.innerWidth < 768) {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.remove('show');
+        }
+    },
+
+    // Theme
+    toggleTheme() {
+        const html = document.documentElement;
+        const isDark = html.classList.contains('dark');
+        if (isDark) {
+            html.classList.remove('dark');
+            document.getElementById('theme-icon').textContent = 'light_mode';
+            document.getElementById('theme-toggle-dot').style.left = '4px';
+        } else {
+            html.classList.add('dark');
+            document.getElementById('theme-icon').textContent = 'dark_mode';
+            document.getElementById('theme-toggle-dot').style.left = '24px';
+        }
+        if (this.terminal) this.terminal.updateTheme();
+    },
+
+    // Toasts
+    toast(message, type) {
+        type = type || 'info';
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const colors = {
+            success: '#059669',
+            error: '#dc2626',
+            info: '#3b82f6',
+            warning: '#d97706',
+        };
+        const icons = {
+            success: 'check_circle',
+            error: 'error',
+            info: 'info',
+            warning: 'warning',
+        };
+        const div = document.createElement('div');
+        div.className = 'toast-enter pointer-events-auto';
+        div.style.cssText = 'background:' + (colors[type] || colors.info) + ';color:#fff;padding:12px 16px;border-radius:10px;font-size:14px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,0.35);max-width:380px;backdrop-filter:blur(12px)';
+        div.innerHTML = '<span class="material-symbols-outlined" style="font-size:18px;opacity:0.85">' + (icons[type] || icons.info) + '</span><span>' + _esc(message) + '</span>';
+        container.appendChild(div);
+        setTimeout(function() { if (div.parentNode) div.remove(); }, 4000);
+    },
+};
+
+// Boot
+document.addEventListener('DOMContentLoaded', function() { App.init(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.1,<4.1
+psutil>=6.0.0
+aiofiles>=24.1.0
+python-multipart>=0.0.9
+slowapi>=0.1.9
+pywinpty>=2.0; sys_platform == "win32"

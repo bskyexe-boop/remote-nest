@@ -1,0 +1,11 @@
+{
+  "admin": {
+    "username": "admin",
+    "hashed_password": "$2b$12$yw4X0KPMlbLGsuF8ge0KjOqmJ6P9RhheICSykYTdT6XolDzaHUuQ6",
+    "role": "admin",
+    "allowed_dirs": [
+      "/"
+    ],
+    "created_at": "2026-08-27T17:32:24.075912+00:00"
+  }
+}
